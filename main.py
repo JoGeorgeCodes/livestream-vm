@@ -1,30 +1,39 @@
-# these imports are all included with python
+import sys
+if sys.version_info.major < 3:
+    raise Exception("Please run with Python3")
+
+# these imports are all included with python including above sys
 import argparse
 import os
-import sys
 import shutil
 import subprocess
 import logging
 import platform
+import time
 
 try:
     info = platform.freedesktop_os_release()
     if info.get('ID') == 'ubuntu':
         print("You are using Ubuntu. This script was designed for Ubuntu, so it should work well for you!")
+    else:
+        print("Please try to use Ubuntu if you can, but it might work on other Debian-based distros as well. If it is not Debian-based, please quit now. Any non-Debian-based system will not work, including Windows and MacOS\nWaiting 5 seconds...")
+        time.sleep(5)
 except:
-    print("You must use Ubuntu!")
-    sys.exit(1)
-
-if sys.version_info.major < 3:
-    raise Exception("Python 3 is required.")
+    print("Please try to use Ubuntu if you can, but it might work on other Debian-based distros as well. If it is not Debian-based, please quit now. Any non-Debian-based system will not work, including Windows and MacOS\nWaiting 5 seconds...")
+    time.sleep(5)
 
 LOG_LEVEL = logging.DEBUG
 
 STORAGE_DIR = os.path.expanduser("~/.ytvm")
 LOG_DIR = os.path.join(STORAGE_DIR, "logs")
 FLAG_DIR = os.path.join(STORAGE_DIR, "flags")
+VENV_DIR = os.path.join(STORAGE_DIR, "venv")
 
-def setup():
+SETTINGS_DIR = os.path.join(STORAGE_DIR, "settings")
+SETTINGS_VM = os.path.join(SETTINGS_DIR, "vm.json")
+SETTINGS_ISOS = os.path.join(SETTINGS_DIR, "isos.json")
+
+def install():
     if os.path.exists(os.path.join(FLAG_DIR, "SETUP_COMPLETE")):
         logging.error(f"{STORAGE_DIR} already exists. Please remove it before running setup. Run:")
         logging.error(f"{sys.executable} {sys.argv[0]} --uninstall")
@@ -37,7 +46,6 @@ def setup():
     pip_dependencies = ["libvirt-python"]
 
     os.makedirs(STORAGE_DIR, exist_ok=True)
-    VENV_DIR = os.path.join(STORAGE_DIR, "venv")
 
     if os.path.abspath(os.path.join(VENV_DIR)) != os.path.abspath(sys.prefix): # check if we're already in our venv, if not, create one and restart the script in it
         logging.info("Creating venv at " + os.path.abspath(VENV_DIR))
@@ -75,6 +83,17 @@ def uninstall():
     logging.info("Uninstallation complete.")
     sys.exit(0)
 
+def add_iso():
+    logging.info("Adding iso to collection...")
+    args.iso = os.path.abspath(args.iso)
+    if not os.path.exists(args.iso):
+        logging.error(f"Iso file {args.iso} does not exist.")
+        sys.exit(1)
+    args.name = args.name.strip()
+    if not args.name:
+        logging.error("Name cannot be empty.")
+        sys.exit(1)
+
 def main():
     global storage_exists
     storage_exists = os.path.exists(STORAGE_DIR)
@@ -82,6 +101,9 @@ def main():
     # these will be needed later
     os.makedirs(LOG_DIR, exist_ok=True)
     os.makedirs(FLAG_DIR, exist_ok=True)
+    os.makedirs(SETTINGS_DIR, exist_ok=True)
+    os.makedirs(SETTINGS_ISOS, exist_ok=True)
+    os.makedirs(SETTINGS_VM, exist_ok=True)
 
     logging.basicConfig( # set up logging
         level=LOG_LEVEL,
@@ -97,26 +119,39 @@ def main():
     
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--setup", action="store_true", help="Install and setup necessary dependencies and environment")
+    parser.add_argument("--install", action="store_true", help="Install and setup necessary dependencies and environment")
     parser.add_argument("--uninstall", action="store_true", help="Uninstall the environment with dependencies and logs")
+    parser.add_argument("--memory", type=int, default=4096, help="Amount of memory to allocate to the VM in MB (default: 4096)")
+    parser.add_argument("--vcpu", type=int, default=2, help="Number of virtual CPUs to allocate to the VM (default: 2)")
 
+    subparser = parser.add_subparsers(dest="command", help="Available commands")
+    add_parser = subparser.add_parser("add", help="Add isos to the collection")
+
+    add_parser.add_argument("--iso", type=str, required=True, help="Path to the iso file to add to the collection")
+    add_parser.add_argument("--name", type=str, required=True, help="Human-readable name to give the iso in the collection, used for switching isos")
+
+    global args
     args = parser.parse_args()
+    if args.install: install()
+    if args.uninstall: uninstall()
+    if args.command == "add": add_iso()
 
-    if args.setup:
-        setup()
-    if args.uninstall:
-        uninstall()
     if not storage_exists or os.path.exists(os.path.join(FLAG_DIR, "SETUP_INPROGRESS")):
-        logging.info("Please run with the --setup flag")
-        logging.info(f"{sys.executable} {sys.argv[0]} --setup")
+        logging.info("Please run with the --install flag")
+        logging.info(f"{sys.executable} {sys.argv[0]} --install")
         sys.exit(1)
     
-    # TODO: add more functionality here, this is just the setup and uninstall code for now
+    if os.path.abspath(os.path.join(VENV_DIR)) != os.path.abspath(sys.prefix): # check if we're already in our venv, if not, restart the script in it
+        logging.info("Restarting with venv at " + os.path.abspath(VENV_DIR))
+        venv_executable = os.path.join(VENV_DIR, "bin", "python")
+        os.execv(venv_executable, [venv_executable] + sys.argv)
+
+    # 
 
 if __name__ == "__main__":
     main()
-else:  
-    print("Usage: Please add the help flag for usage instructions:")
-    print("python3 main.py --help")
+else:
     print("Please don't import this file, it's meant to be run as a script.")
+    print("Please add the help flag for usage instructions:")
+    print("python3 main.py --help")
     sys.exit(1)
